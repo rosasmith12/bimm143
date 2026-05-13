@@ -1,0 +1,277 @@
+---
+title: "class12"
+author: "Rosa Smith"
+format: pdf
+editor: visual
+---
+
+## 
+
+```{r}
+counts <-read.csv("airway_scaledcounts.csv", row.names=1)
+metadata <- read.csv("airway_metadata.csv")
+```
+
+```{r}
+```
+
+```{r}
+head(counts)
+```
+
+```{r}
+head(metadata)
+```
+
+```{r}
+nrow(counts)
+nrow(metadata)
+```
+
+## Q1. Based on data above, there are 38694 genes in the dataset.
+
+```{r}
+View(metadata)
+```
+
+##Q2. After viewing the metadata, there are 4 control cell lines.
+
+```{r}
+library(dplyr)
+control <- metadata %>% filter(dex=="control")
+control.counts <- counts %>% select(control$id) 
+control.mean <- rowSums(control.counts)/4
+head(control.mean)
+```
+I like the dplyr package because it makes sense in my head to "filter" for different variables.
+
+## Q3. You could assign the 4 values to a vector that is the actual number of controls in case the value were to change.
+
+##Q4. shown below.
+```{r}
+library(dplyr)
+
+treated <- metadata %>% filter(dex == "treated")
+
+treated.counts <- counts %>% select(treated$id)
+
+treated.mean <- rowMeans(treated.counts)
+
+head(treated.mean)
+```
+```{r}
+#combining meancount data
+
+meancounts <- data.frame(control.mean, treated.mean)
+```
+
+
+## Q5a. shown below.
+
+```{r}
+plot(meancounts)
+```
+
+```{r}
+library(ggplot2)
+ggplot(meancounts, aes(control.mean, treated.mean))+
+  geom_point(alpha=.4)
+#alpha used to change opacity
+```
+## Q5b. shown above. Using "geom_point" in the ggplot2 package.
+```{r}
+library(ggplot2)
+ggplot(meancounts, aes(control.mean, treated.mean))+
+  geom_point(alpha=.4)+
+  scale_x_log10()+
+  scale_y_log10()
+  
+#scaled using ggplot
+
+```
+
+```{r}
+plot(meancounts, log="xy")
+```
+## Q6. shown above with ggplot and default plot().
+
+```{r}
+meancounts$log2fc <- log2(meancounts[,"treated.mean"]/meancounts[,"control.mean"])
+head(meancounts)
+```
+
+```{r}
+#filtered data
+zero.vals <- which(meancounts[,1:2]==0, arr.ind=TRUE)
+
+to.rm <- unique(zero.vals[,1])
+mycounts <- meancounts[-to.rm,]
+head(mycounts)
+```
+
+## Q7. arr.ind = TRUE makes which() return the row and column positions of all TRUE values instead of just a single vector of positions, and gives rows and columns that have zeroes. Then using unique() so that if it a gene has zeros in multiple samples it's only listed once.
+
+```{r}
+up.ind <- mycounts$log2fc > 2
+down.ind <- mycounts$log2fc < (-2)
+```
+```{r}
+table(up.ind)
+```
+```{r}
+table(down.ind)
+```
+
+
+## Q8. Using results above, there are 250 up regulated changes at the greater than 2 fc level.
+
+## Q9. From the table above, there are 367 down regulated genese at the greater than 2 fc level.
+
+## Q10. The results could be misleading because it's based on fold-changes, which could be large without being statistically significant.
+
+
+```{r}
+library(DESeq2)
+citation("DESeq2")
+
+```
+```{r}
+dds <- DESeqDataSetFromMatrix(countData=counts, 
+                              colData=metadata, 
+                              design=~dex)
+dds
+```
+```{r}
+vsd <- vst(dds, blind = FALSE)
+plotPCA(vsd, intgroup = c("dex"))
+```
+
+```{r}
+pcaData <- plotPCA(vsd, intgroup=c("dex"), returnData=TRUE)
+head(pcaData)
+```
+
+```{r}
+
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+
+ggplot(pcaData) +
+  aes(x = PC1, y = PC2, color = dex) +
+  geom_point(size =3) +
+  xlab(paste0("PC1: ", percentVar[1], "% variance")) +
+  ylab(paste0("PC2: ", percentVar[2], "% variance")) +
+  coord_fixed() +
+  theme_bw()
+```
+
+```{r}
+dds <- DESeq(dds)
+```
+
+```{r}
+# results
+
+res <- results(dds)
+res
+
+```
+```{r}
+summary(res)
+```
+
+```{r}
+library("AnnotationDbi")
+library("org.Hs.eg.db")
+
+```
+```{r}
+columns(org.Hs.eg.db)
+```
+
+```{r}
+res$symbol <- mapIds(org.Hs.eg.db,
+                     keys=row.names(res), # genenames
+                     keytype="ENSEMBL",        #format of our genenames
+                     column="SYMBOL",          # The new format 
+                     multiVals="first")
+
+head(res)
+```
+
+## Q11. Shown below.
+
+```{r}
+res$entrez <- mapIds(org.Hs.eg.db,
+                     keys=row.names(res),
+                     column="ENTREZID",
+                     keytype="ENSEMBL",
+                     multiVals="first")
+
+res$uniprot <- mapIds(org.Hs.eg.db,
+                     keys=row.names(res),
+                     column="UNIPROT",
+                     keytype="ENSEMBL",
+                     multiVals="first")
+
+res$genename <- mapIds(org.Hs.eg.db,
+                     keys=row.names(res),
+                     column="GENENAME",
+                     keytype="ENSEMBL",
+                     multiVals="first")
+
+head(res)
+
+```
+```{r}
+# viewing by p-value
+
+ord <- order( res$padj )
+#View(res[ord,])
+head(res[ord,])
+```
+```{r}
+write.csv(res[ord,], "deseq_results.csv")
+```
+```{r}
+plot( res$log2FoldChange,  -log(res$padj), 
+      xlab="Log2(FoldChange)",
+      ylab="-Log(P-value)")
+
+```
+
+```{r}
+plot( res$log2FoldChange,  -log(res$padj), 
+ ylab="-Log(P-value)", xlab="Log2(FoldChange)")
+
+# Add some cut-off lines
+abline(v=c(-2,2), col="darkgray", lty=2)
+abline(h=-log(0.05), col="darkgray", lty=2)
+```
+```{r}
+
+mycols <- rep("gray", nrow(res))
+mycols[ abs(res$log2FoldChange) > 2 ]  <- "red" 
+
+inds <- (res$padj < 0.01) & (abs(res$log2FoldChange) > 2 )
+mycols[ inds ] <- "blue"
+
+plot( res$log2FoldChange,  -log(res$padj), 
+ col=mycols, ylab="-Log(P-value)", xlab="Log2(FoldChange)" )
+
+abline(v=c(-2,2), col="gray", lty=2)
+abline(h=-log(0.1), col="gray", lty=2)
+```
+```{r}
+
+
+library(EnhancedVolcano)
+
+x <- as.data.frame(res)
+
+EnhancedVolcano(x,
+    lab = x$symbol,
+    x = 'log2FoldChange',
+    y = 'pvalue')
+```
+
+
